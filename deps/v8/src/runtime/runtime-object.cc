@@ -9,6 +9,7 @@
 #include "src/debug/debug.h"
 #include "src/isolate-inl.h"
 #include "src/messages.h"
+#include "src/objects/property-descriptor-object.h"
 #include "src/property-descriptor.h"
 #include "src/runtime/runtime.h"
 
@@ -160,7 +161,8 @@ bool DeleteObjectPropertyFast(Isolate* isolate, Handle<JSReceiver> receiver,
   // Zap the property to avoid keeping objects alive. Zapping is not necessary
   // for properties stored in the descriptor array.
   if (details.location() == kField) {
-    isolate->heap()->NotifyObjectLayoutChange(*receiver, no_allocation);
+    isolate->heap()->NotifyObjectLayoutChange(*receiver, map->instance_size(),
+                                              no_allocation);
     Object* filler = isolate->heap()->one_pointer_filler_map();
     FieldIndex index = FieldIndex::ForPropertyIndex(map, details.field_index());
     JSObject::cast(*receiver)->RawFastPropertyAtPut(index, filler);
@@ -236,7 +238,19 @@ RUNTIME_FUNCTION(Runtime_ObjectHasOwnProperty) {
 
   Handle<Object> object = args.at(0);
 
-  if (object->IsJSObject()) {
+  if (object->IsJSModuleNamespace()) {
+    if (key.is_null()) {
+      DCHECK(key_is_array_index);
+      // Namespace objects can't have indexed properties.
+      return isolate->heap()->false_value();
+    }
+
+    Maybe<bool> result =
+        JSReceiver::HasOwnProperty(Handle<JSReceiver>::cast(object), key);
+    if (!result.IsJust()) return isolate->heap()->exception();
+    return isolate->heap()->ToBoolean(result.FromJust());
+
+  } else if (object->IsJSObject()) {
     Handle<JSObject> js_obj = Handle<JSObject>::cast(object);
     // Fast case: either the key is a real named property or it is not
     // an array index and there are no interceptors or hidden
@@ -454,7 +468,7 @@ RUNTIME_FUNCTION(Runtime_AddNamedProperty) {
   LookupIterator it(object, name, object, LookupIterator::OWN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
   if (!maybe.IsJust()) return isolate->heap()->exception();
-  CHECK(!it.IsFound());
+  DCHECK(!it.IsFound());
 #endif
 
   RETURN_RESULT_OR_FAILURE(isolate, JSObject::SetOwnPropertyIgnoreAttributes(
@@ -480,11 +494,11 @@ RUNTIME_FUNCTION(Runtime_AddElement) {
                     LookupIterator::OWN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
   if (!maybe.IsJust()) return isolate->heap()->exception();
-  CHECK(!it.IsFound());
+  DCHECK(!it.IsFound());
 
   if (object->IsJSArray()) {
     Handle<JSArray> array = Handle<JSArray>::cast(object);
-    CHECK(!JSArray::WouldChangeReadOnlyLength(array, index));
+    DCHECK(!JSArray::WouldChangeReadOnlyLength(array, index));
   }
 #endif
 
@@ -798,12 +812,14 @@ RUNTIME_FUNCTION(Runtime_CollectTypeProfile) {
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 1);
   CONVERT_ARG_HANDLE_CHECKED(FeedbackVector, vector, 2);
 
-  DCHECK(FLAG_type_profile);
-
   Handle<String> type = Object::TypeOf(isolate, value);
   if (value->IsJSReceiver()) {
     Handle<JSReceiver> object = Handle<JSReceiver>::cast(value);
     type = JSReceiver::GetConstructorName(object);
+  } else if (value->IsNull(isolate)) {
+    // typeof(null) is object. But it's more user-friendly to annotate
+    // null as type "null".
+    type = Handle<String>(isolate->heap()->null_string());
   }
 
   DCHECK(vector->metadata()->HasTypeProfileSlot());
@@ -1183,6 +1199,22 @@ RUNTIME_FUNCTION(Runtime_IterableToListCanBeElided) {
   if (!IsFastNumberElementsKind(kind)) return isolate->heap()->ToBoolean(false);
 
   return isolate->heap()->ToBoolean(!obj->IterationHasObservableEffects());
+}
+
+RUNTIME_FUNCTION(Runtime_GetOwnPropertyDescriptor) {
+  HandleScope scope(isolate);
+
+  DCHECK_EQ(2, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSReceiver, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Name, name, 1);
+
+  PropertyDescriptor desc;
+  Maybe<bool> found =
+      JSReceiver::GetOwnPropertyDescriptor(isolate, object, name, &desc);
+  MAYBE_RETURN(found, isolate->heap()->exception());
+
+  if (!found.FromJust()) return isolate->heap()->undefined_value();
+  return *desc.ToPropertyDescriptorObject(isolate);
 }
 
 }  // namespace internal

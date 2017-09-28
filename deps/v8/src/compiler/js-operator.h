@@ -128,7 +128,7 @@ ConstructForwardVarargsParameters const& ConstructForwardVarargsParametersOf(
     Operator const*) WARN_UNUSED_RESULT;
 
 // Defines the arity and the feedback for a JavaScript constructor call. This is
-// used as a parameter by JSConstruct operators.
+// used as a parameter by JSConstruct and JSConstructWithSpread operators.
 class ConstructParameters final {
  public:
   ConstructParameters(uint32_t arity, CallFrequency frequency,
@@ -153,30 +153,6 @@ size_t hash_value(ConstructParameters const&);
 std::ostream& operator<<(std::ostream&, ConstructParameters const&);
 
 ConstructParameters const& ConstructParametersOf(Operator const*);
-
-// Defines the arity for JavaScript calls with a spread as the last
-// parameter. This is used as a parameter by JSConstructWithSpread and
-// JSCallWithSpread operators.
-class SpreadWithArityParameter final {
- public:
-  explicit SpreadWithArityParameter(uint32_t arity) : arity_(arity) {}
-
-  uint32_t arity() const { return arity_; }
-
- private:
-  uint32_t const arity_;
-};
-
-bool operator==(SpreadWithArityParameter const&,
-                SpreadWithArityParameter const&);
-bool operator!=(SpreadWithArityParameter const&,
-                SpreadWithArityParameter const&);
-
-size_t hash_value(SpreadWithArityParameter const&);
-
-std::ostream& operator<<(std::ostream&, SpreadWithArityParameter const&);
-
-SpreadWithArityParameter const& SpreadWithArityParameterOf(Operator const*);
 
 // Defines the flags for a JavaScript call forwarding parameters. This
 // is used as parameter by JSCallForwardVarargs operators.
@@ -213,7 +189,7 @@ CallForwardVarargsParameters const& CallForwardVarargsParametersOf(
     Operator const*) WARN_UNUSED_RESULT;
 
 // Defines the arity and the call flags for a JavaScript function call. This is
-// used as a parameter by JSCall operators.
+// used as a parameter by JSCall and JSCallWithSpread operators.
 class CallParameters final {
  public:
   CallParameters(size_t arity, CallFrequency frequency,
@@ -390,8 +366,8 @@ std::ostream& operator<<(std::ostream&, StoreNamedOwnParameters const&);
 const StoreNamedOwnParameters& StoreNamedOwnParametersOf(const Operator* op);
 
 // Defines the feedback, i.e., vector and index, for storing a data property in
-// an object literal. This is
-// used as a parameter by the JSStoreDataPropertyInLiteral operator.
+// an object literal. This is used as a parameter by JSCreateEmptyLiteralArray
+// and JSStoreDataPropertyInLiteral operators.
 class FeedbackParameter final {
  public:
   explicit FeedbackParameter(VectorSlotPair const& feedback)
@@ -585,20 +561,23 @@ const CreateClosureParameters& CreateClosureParametersOf(const Operator* op);
 // JSCreateLiteralRegExp operators.
 class CreateLiteralParameters final {
  public:
-  CreateLiteralParameters(Handle<HeapObject> constant, int length, int flags,
-                          int index)
-      : constant_(constant), length_(length), flags_(flags), index_(index) {}
+  CreateLiteralParameters(Handle<HeapObject> constant,
+                          VectorSlotPair const& feedback, int length, int flags)
+      : constant_(constant),
+        feedback_(feedback),
+        length_(length),
+        flags_(flags) {}
 
   Handle<HeapObject> constant() const { return constant_; }
+  VectorSlotPair const& feedback() const { return feedback_; }
   int length() const { return length_; }
   int flags() const { return flags_; }
-  int index() const { return index_; }
 
  private:
   Handle<HeapObject> const constant_;
+  VectorSlotPair const feedback_;
   int const length_;
   int const flags_;
-  int const index_;
 };
 
 bool operator==(CreateLiteralParameters const&, CreateLiteralParameters const&);
@@ -610,26 +589,18 @@ std::ostream& operator<<(std::ostream&, CreateLiteralParameters const&);
 
 const CreateLiteralParameters& CreateLiteralParametersOf(const Operator* op);
 
-// Defines the number of operands passed to a JSStringConcat operator.
-class StringConcatParameter final {
- public:
-  explicit StringConcatParameter(int operand_count)
-      : operand_count_(operand_count) {}
-
-  int operand_count() const { return operand_count_; }
-
- private:
-  uint32_t const operand_count_;
+// Descriptor used by the JSForInPrepare and JSForInNext opcodes.
+enum class ForInMode : uint8_t {
+  kUseEnumCacheKeysAndIndices,
+  kUseEnumCacheKeys,
+  kGeneric
 };
 
-bool operator==(StringConcatParameter const&, StringConcatParameter const&);
-bool operator!=(StringConcatParameter const&, StringConcatParameter const&);
+size_t hash_value(ForInMode);
 
-size_t hash_value(StringConcatParameter const&);
+std::ostream& operator<<(std::ostream&, ForInMode);
 
-std::ostream& operator<<(std::ostream&, StringConcatParameter const&);
-
-StringConcatParameter const& StringConcatParameterOf(Operator const*);
+ForInMode ForInModeOf(Operator const* op) WARN_UNUSED_RESULT;
 
 BinaryOperationHint BinaryOperationHintOf(const Operator* op);
 
@@ -669,7 +640,6 @@ class V8_EXPORT_PRIVATE JSOperatorBuilder final
   const Operator* ToNumber();
   const Operator* ToObject();
   const Operator* ToString();
-  const Operator* ToPrimitiveToString();
 
   const Operator* Create();
   const Operator* CreateArguments(CreateArgumentsType type);
@@ -680,13 +650,18 @@ class V8_EXPORT_PRIVATE JSOperatorBuilder final
   const Operator* CreateIterResultObject();
   const Operator* CreateKeyValueArray();
   const Operator* CreateLiteralArray(Handle<ConstantElementsPair> constant,
-                                     int literal_flags, int literal_index,
-                                     int number_of_elements);
+                                     VectorSlotPair const& feedback,
+                                     int literal_flags, int number_of_elements);
+  const Operator* CreateEmptyLiteralArray(VectorSlotPair const& feedback);
+  const Operator* CreateEmptyLiteralObject();
+
   const Operator* CreateLiteralObject(Handle<BoilerplateDescription> constant,
-                                      int literal_flags, int literal_index,
+                                      VectorSlotPair const& feedback,
+                                      int literal_flags,
                                       int number_of_properties);
   const Operator* CreateLiteralRegExp(Handle<String> constant_pattern,
-                                      int literal_flags, int literal_index);
+                                      VectorSlotPair const& feedback,
+                                      int literal_flags);
 
   const Operator* CallForwardVarargs(size_t arity, uint32_t start_index);
   const Operator* Call(
@@ -694,7 +669,9 @@ class V8_EXPORT_PRIVATE JSOperatorBuilder final
       VectorSlotPair const& feedback = VectorSlotPair(),
       ConvertReceiverMode convert_mode = ConvertReceiverMode::kAny);
   const Operator* CallWithArrayLike(CallFrequency frequency);
-  const Operator* CallWithSpread(uint32_t arity);
+  const Operator* CallWithSpread(
+      uint32_t arity, CallFrequency frequency = CallFrequency(),
+      VectorSlotPair const& feedback = VectorSlotPair());
   const Operator* CallRuntime(Runtime::FunctionId id);
   const Operator* CallRuntime(Runtime::FunctionId id, size_t arity);
   const Operator* CallRuntime(const Runtime::Function* function, size_t arity);
@@ -704,7 +681,9 @@ class V8_EXPORT_PRIVATE JSOperatorBuilder final
                             CallFrequency frequency = CallFrequency(),
                             VectorSlotPair const& feedback = VectorSlotPair());
   const Operator* ConstructWithArrayLike(CallFrequency frequency);
-  const Operator* ConstructWithSpread(uint32_t arity);
+  const Operator* ConstructWithSpread(
+      uint32_t arity, CallFrequency frequency = CallFrequency(),
+      VectorSlotPair const& feedback = VectorSlotPair());
 
   const Operator* ConvertReceiver(ConvertReceiverMode convert_mode);
 
@@ -747,13 +726,12 @@ class V8_EXPORT_PRIVATE JSOperatorBuilder final
   const Operator* InstanceOf();
   const Operator* OrdinaryHasInstance();
 
-  const Operator* ForInNext();
-  const Operator* ForInPrepare();
+  const Operator* ForInEnumerate();
+  const Operator* ForInNext(ForInMode);
+  const Operator* ForInPrepare(ForInMode);
 
   const Operator* LoadMessage();
   const Operator* StoreMessage();
-
-  const Operator* StringConcat(int operand_count);
 
   // Used to implement Ignition's SuspendGenerator bytecode.
   const Operator* GeneratorStore(int register_count);

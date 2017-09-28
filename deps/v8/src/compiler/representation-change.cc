@@ -10,7 +10,7 @@
 #include "src/code-factory.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-matchers.h"
-#include "src/objects-inl.h"
+#include "src/factory-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -172,18 +172,18 @@ Node* RepresentationChanger::GetRepresentationFor(
       return GetTaggedPointerRepresentationFor(node, output_rep, output_type,
                                                use_node, use_info);
     case MachineRepresentation::kTagged:
-      DCHECK(use_info.type_check() == TypeCheckKind::kNone);
+      DCHECK_EQ(TypeCheckKind::kNone, use_info.type_check());
       return GetTaggedRepresentationFor(node, output_rep, output_type,
                                         use_info.truncation());
     case MachineRepresentation::kFloat32:
-      DCHECK(use_info.type_check() == TypeCheckKind::kNone);
+      DCHECK_EQ(TypeCheckKind::kNone, use_info.type_check());
       return GetFloat32RepresentationFor(node, output_rep, output_type,
                                          use_info.truncation());
     case MachineRepresentation::kFloat64:
       return GetFloat64RepresentationFor(node, output_rep, output_type,
                                          use_node, use_info);
     case MachineRepresentation::kBit:
-      DCHECK(use_info.type_check() == TypeCheckKind::kNone);
+      DCHECK_EQ(TypeCheckKind::kNone, use_info.type_check());
       return GetBitRepresentationFor(node, output_rep, output_type);
     case MachineRepresentation::kWord8:
     case MachineRepresentation::kWord16:
@@ -191,7 +191,7 @@ Node* RepresentationChanger::GetRepresentationFor(
       return GetWord32RepresentationFor(node, output_rep, output_type, use_node,
                                         use_info);
     case MachineRepresentation::kWord64:
-      DCHECK(use_info.type_check() == TypeCheckKind::kNone);
+      DCHECK_EQ(TypeCheckKind::kNone, use_info.type_check());
       return GetWord64RepresentationFor(node, output_rep, output_type);
     case MachineRepresentation::kSimd128:
     case MachineRepresentation::kNone:
@@ -722,7 +722,7 @@ Node* RepresentationChanger::GetWord32RepresentationFor(
     }
   } else if (output_rep == MachineRepresentation::kWord8 ||
              output_rep == MachineRepresentation::kWord16) {
-    DCHECK(use_info.representation() == MachineRepresentation::kWord32);
+    DCHECK_EQ(MachineRepresentation::kWord32, use_info.representation());
     DCHECK(use_info.type_check() == TypeCheckKind::kSignedSmall ||
            use_info.type_check() == TypeCheckKind::kSigned32);
     return node;
@@ -829,9 +829,11 @@ const Operator* RepresentationChanger::Int32OperatorFor(
     IrOpcode::Value opcode) {
   switch (opcode) {
     case IrOpcode::kSpeculativeNumberAdd:  // Fall through.
+    case IrOpcode::kSpeculativeSafeIntegerAdd:
     case IrOpcode::kNumberAdd:
       return machine()->Int32Add();
     case IrOpcode::kSpeculativeNumberSubtract:  // Fall through.
+    case IrOpcode::kSpeculativeSafeIntegerSubtract:
     case IrOpcode::kNumberSubtract:
       return machine()->Int32Sub();
     case IrOpcode::kSpeculativeNumberMultiply:
@@ -869,9 +871,9 @@ const Operator* RepresentationChanger::Int32OperatorFor(
 const Operator* RepresentationChanger::Int32OverflowOperatorFor(
     IrOpcode::Value opcode) {
   switch (opcode) {
-    case IrOpcode::kSpeculativeNumberAdd:
+    case IrOpcode::kSpeculativeSafeIntegerAdd:
       return simplified()->CheckedInt32Add();
-    case IrOpcode::kSpeculativeNumberSubtract:
+    case IrOpcode::kSpeculativeSafeIntegerSubtract:
       return simplified()->CheckedInt32Sub();
     case IrOpcode::kSpeculativeNumberDivide:
       return simplified()->CheckedInt32Div();
@@ -949,9 +951,11 @@ const Operator* RepresentationChanger::Float64OperatorFor(
     IrOpcode::Value opcode) {
   switch (opcode) {
     case IrOpcode::kSpeculativeNumberAdd:
+    case IrOpcode::kSpeculativeSafeIntegerAdd:
     case IrOpcode::kNumberAdd:
       return machine()->Float64Add();
     case IrOpcode::kSpeculativeNumberSubtract:
+    case IrOpcode::kSpeculativeSafeIntegerSubtract:
     case IrOpcode::kNumberSubtract:
       return machine()->Float64Sub();
     case IrOpcode::kSpeculativeNumberMultiply:

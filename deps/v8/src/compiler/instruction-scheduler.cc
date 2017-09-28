@@ -90,10 +90,10 @@ InstructionScheduler::InstructionScheduler(Zone* zone,
 
 void InstructionScheduler::StartBlock(RpoNumber rpo) {
   DCHECK(graph_.empty());
-  DCHECK(last_side_effect_instr_ == nullptr);
+  DCHECK_NULL(last_side_effect_instr_);
   DCHECK(pending_loads_.empty());
-  DCHECK(last_live_in_reg_marker_ == nullptr);
-  DCHECK(last_deopt_or_trap_ == nullptr);
+  DCHECK_NULL(last_live_in_reg_marker_);
+  DCHECK_NULL(last_deopt_or_trap_);
   DCHECK(operands_map_.empty());
   sequence()->StartBlock(rpo);
 }
@@ -240,9 +240,13 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
     case kArchNop:
     case kArchFramePointer:
     case kArchParentFramePointer:
-    case kArchTruncateDoubleToI:
-    case kArchStackSlot:
+    case kArchStackSlot:  // Despite its name this opcode will produce a
+                          // reference to a frame slot, so it is not affected
+                          // by the arm64 dual stack issues mentioned below.
     case kArchComment:
+      return kNoOpcodeFlags;
+
+    case kArchTruncateDoubleToI:
     case kIeee754Float64Acos:
     case kIeee754Float64Acosh:
     case kIeee754Float64Asin:
@@ -264,7 +268,21 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
     case kIeee754Float64Sinh:
     case kIeee754Float64Tan:
     case kIeee754Float64Tanh:
+#ifdef V8_TARGET_ARCH_ARM64
+      // This is an unfortunate effect of arm64 dual stack pointers:
+      //  * TruncateDoubleToI may call a stub, and the stub will push and pop
+      //    values onto the stack. Push updates both CSP and JSSP but pop only
+      //    restores JSSP.
+      //  * kIeee754XXX opcodes call a C Function and the call macro may update
+      //    CSP to meet alignment requirements but it will not bring back CSP to
+      //    its original value.
+      // Those opcode cannot be reordered with instructions with side effects
+      // such as Arm64ClaimCSP.
+      // TODO(arm64): remove when JSSP is gone.
+      return kHasSideEffect;
+#else
       return kNoOpcodeFlags;
+#endif
 
     case kArchStackPointer:
       // ArchStackPointer instruction loads the current stack pointer value and
@@ -272,6 +290,8 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
       return kIsLoadOperation;
 
     case kArchPrepareCallCFunction:
+    case kArchSaveCallerRegisters:
+    case kArchRestoreCallerRegisters:
     case kArchPrepareTailCall:
     case kArchCallCFunction:
     case kArchCallCodeObject:
@@ -280,7 +300,6 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
 
     case kArchTailCallCodeObjectFromJSFunction:
     case kArchTailCallCodeObject:
-    case kArchTailCallJSFunctionFromJSFunction:
     case kArchTailCallAddress:
       return kHasSideEffect | kIsBlockTerminator;
 
@@ -289,6 +308,7 @@ int InstructionScheduler::GetInstructionFlags(const Instruction* instr) const {
     case kArchLookupSwitch:
     case kArchTableSwitch:
     case kArchRet:
+    case kArchDebugAbort:
     case kArchDebugBreak:
     case kArchThrowTerminator:
       return kIsBlockTerminator;
@@ -382,7 +402,7 @@ void InstructionScheduler::ComputeTotalLatencies() {
     int max_latency = 0;
 
     for (ScheduleGraphNode* successor : node->successors()) {
-      DCHECK(successor->total_latency() != -1);
+      DCHECK_NE(-1, successor->total_latency());
       if (successor->total_latency() > max_latency) {
         max_latency = successor->total_latency();
       }

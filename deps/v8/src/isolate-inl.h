@@ -47,6 +47,17 @@ bool Isolate::has_pending_exception() {
   return !thread_local_top_.pending_exception_->IsTheHole(this);
 }
 
+Object* Isolate::get_wasm_caught_exception() {
+  return thread_local_top_.wasm_caught_exception_;
+}
+
+void Isolate::set_wasm_caught_exception(Object* exception) {
+  thread_local_top_.wasm_caught_exception_ = exception;
+}
+
+void Isolate::clear_wasm_caught_exception() {
+  thread_local_top_.wasm_caught_exception_ = nullptr;
+}
 
 void Isolate::clear_pending_message() {
   thread_local_top_.pending_message_obj_ = heap_.the_hole_value();
@@ -71,19 +82,19 @@ void Isolate::clear_scheduled_exception() {
   thread_local_top_.scheduled_exception_ = heap_.the_hole_value();
 }
 
-
 bool Isolate::is_catchable_by_javascript(Object* exception) {
   return exception != heap()->termination_exception();
 }
 
-bool Isolate::is_catchable_by_wasm(Object* exception) {
-  return is_catchable_by_javascript(exception) &&
-         (exception->IsNumber() || exception->IsSmi());
+void Isolate::FireBeforeCallEnteredCallback() {
+  for (auto& callback : before_call_entered_callbacks_) {
+    callback(reinterpret_cast<v8::Isolate*>(this));
+  }
 }
 
-void Isolate::FireBeforeCallEnteredCallback() {
-  for (int i = 0; i < before_call_entered_callbacks_.length(); i++) {
-    before_call_entered_callbacks_.at(i)(reinterpret_cast<v8::Isolate*>(this));
+void Isolate::FireMicrotasksCompletedCallback() {
+  for (auto& callback : microtasks_completed_callbacks_) {
+    callback(reinterpret_cast<v8::Isolate*>(this));
   }
 }
 
@@ -134,7 +145,7 @@ bool Isolate::IsArraySpeciesLookupChainIntact() {
 }
 
 bool Isolate::IsStringLengthOverflowIntact() {
-  PropertyCell* string_length_cell = heap()->string_length_protector();
+  Cell* string_length_cell = heap()->string_length_protector();
   return string_length_cell->value() == Smi::FromInt(kProtectorValid);
 }
 

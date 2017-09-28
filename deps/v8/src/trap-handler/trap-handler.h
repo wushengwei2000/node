@@ -38,6 +38,8 @@ struct ProtectedInstructionData {
   intptr_t landing_offset;
 };
 
+const int kInvalidIndex = -1;
+
 /// Adjusts the base code pointer.
 void UpdateHandlerDataCodePointer(int index, void* base);
 
@@ -88,6 +90,8 @@ bool RegisterDefaultSignalHandler();
 #if V8_OS_LINUX
 bool TryHandleSignal(int signum, siginfo_t* info, ucontext_t* context);
 #endif  // V8_OS_LINUX
+
+size_t GetRecoveredTrapCount();
 
 }  // namespace trap_handler
 }  // namespace internal

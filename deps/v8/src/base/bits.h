@@ -117,6 +117,7 @@ inline unsigned CountLeadingZeros64(uint64_t value) {
 #endif
 }
 
+DEFINE_32_64_OVERLOADS(CountLeadingZeros)
 
 // ReverseBits(value) returns |value| in reverse bit order.
 template <typename T>
@@ -333,7 +334,7 @@ FromCheckedNumeric(const internal::CheckedNumeric<int64_t> value);
 // checks and returns the result.
 V8_BASE_EXPORT int64_t SignedSaturatedAdd64(int64_t lhs, int64_t rhs);
 
-// SignedSaturatedSub64(lhs, rhs) substracts |lhs| by |rhs|,
+// SignedSaturatedSub64(lhs, rhs) subtracts |lhs| by |rhs|,
 // checks and returns the result.
 V8_BASE_EXPORT int64_t SignedSaturatedSub64(int64_t lhs, int64_t rhs);
 

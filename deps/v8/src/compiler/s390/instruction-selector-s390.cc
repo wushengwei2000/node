@@ -6,7 +6,7 @@
 #include "src/compiler/instruction-selector-impl.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
-#include "src/s390/frames-s390.h"
+#include "src/frame-constants.h"
 
 namespace v8 {
 namespace internal {
@@ -221,7 +221,7 @@ class S390OperandGenerator final : public OperandGenerator {
     DCHECK(m.matches());
     if ((m.displacement() == nullptr ||
          CanBeImmediate(m.displacement(), immediate_mode))) {
-      DCHECK(m.scale() == 0);
+      DCHECK_EQ(0, m.scale());
       return GenerateMemoryOperandInputs(m.index(), m.base(), m.displacement(),
                                          m.displacement_mode(), inputs,
                                          input_count);
@@ -706,6 +706,11 @@ void InstructionSelector::VisitStackSlot(Node* node) {
 
   Emit(kArchStackSlot, g.DefineAsRegister(node),
        sequence()->AddImmediate(Constant(slot)), 0, nullptr);
+}
+
+void InstructionSelector::VisitDebugAbort(Node* node) {
+  S390OperandGenerator g(this);
+  Emit(kArchDebugAbort, g.NoOutput(), g.UseFixed(node->InputAt(0), r3));
 }
 
 void InstructionSelector::VisitLoad(Node* node) {
